@@ -1,0 +1,7 @@
+# Artifacts
+kaizen*
+
+# Intermediates
+*.o
+*.d
+
