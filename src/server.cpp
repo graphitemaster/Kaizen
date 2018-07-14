@@ -8,9 +8,6 @@
 
 #include <cstring> // std::memset
 
-#include <netinet/in.h> // socket api
-#include <unistd.h> // close
-
 bool Server::client_thread() {
   while (m_running.load()) {
     Client client;
@@ -31,6 +28,10 @@ bool Server::client_thread() {
 }
 
 bool Server::server_thread() {
+  if (!m_socket.create(Address::INET4)) {
+    return false;
+  }
+
   if (!listen()) {
     return false;
   }
@@ -53,7 +54,6 @@ Server::Server(uint16_t port, size_t threads, Database& db)
   : m_running  { true }
   , m_thread   { &Server::server_thread, this }
   , m_sessions { new SessionManager }
-  , m_fd       { -1 }
   , m_port     { port }
   , m_db       { db }
 {
@@ -93,12 +93,8 @@ Server::~Server()
     }
   }
 
-  if (m_fd != -1) {
-    // NOTE(dweiler): cancel blocked accept system call
-    shutdown(m_fd, SHUT_RDWR);
-
-    // Then close the socket
-    close(m_fd);
+  if (m_socket) {
+    m_socket.shutdown();
   }
 
   // Stop the listening thread
@@ -108,46 +104,22 @@ Server::~Server()
 }
 
 bool Server::listen() {
-  m_fd = ::socket(AF_INET, SOCK_STREAM, 0);
-  if (m_fd < 0) {
+  Address address;
+  address.family = Address::INET4;
+  address.port = m_port;
+  address.ip.v4.host = 0;
+  if (!m_socket.bind(address)) {
     return false;
   }
-
-  // Reuse port
-  int setopt = 1;
-  if (::setsockopt(m_fd, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char*>(&setopt), sizeof setopt) == -1) {
-    return false;
-  }
-
-  struct sockaddr_in addr;
-  for (;;) {
-    std::memset(&addr, 0, sizeof addr);
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(m_port);
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);
-
-    if (::bind(m_fd, reinterpret_cast<struct sockaddr *>(&addr), sizeof addr) < 0) {
-      m_port++;
-    } else {
-      break;
-    }
-  }
-
-  if (::listen(m_fd, SOMAXCONN) < 0) {
-    return false;
-  }
-
-  return true;
+  return m_socket.listen(-1);
 }
 
 std::optional<Client> Server::accept() {
-  struct sockaddr_in addr;
-  socklen_t len = sizeof addr;
-  int fd = ::accept(m_fd, reinterpret_cast<struct sockaddr *>(&addr), &len);
-  if (fd < 0) {
+  std::optional<Socket> socket = m_socket.accept();
+  if (!socket) {
     return std::nullopt;
   }
-  return { fd };
+  return { std::move(socket) };
 }
 
 static std::unordered_map<std::string, std::string> parse_http_header(const std::string& contents) {
@@ -169,7 +141,7 @@ static std::unordered_map<std::string, std::string> parse_http_header(const std:
   return fields;
 }
 
-bool Server::handle(Client &&client) {
+bool Server::handle(Client&& client) {
   const auto &contents = client.read();
   if (contents) {
     // Read the first line

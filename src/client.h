@@ -6,10 +6,12 @@
 #include <string>
 #include <vector>
 
+#include "socket.h"
+
 struct Client
 {
   Client();
-  Client(int fd);
+  Client(Socket&& socket);
   Client(Client&& other);
   void operator=(Client&& other);
   ~Client();
@@ -24,8 +26,10 @@ struct Client
 
   std::optional<std::string> read();
 
+  const Socket& socket() const { return m_socket; };
+
 private:
-  int m_fd;
+  Socket m_socket;
   std::vector<std::string> m_fields;
 };
 

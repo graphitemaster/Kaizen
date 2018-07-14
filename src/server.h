@@ -13,6 +13,7 @@
 #include <unordered_map> // std::unordered_map
 
 #include "client.h"
+#include "socket.h"
 
 struct SessionManager;
 struct Database;
@@ -41,7 +42,7 @@ private:
   std::atomic_bool m_running;
   std::thread m_thread;
   std::unique_ptr<SessionManager> m_sessions;
-  int m_fd;
+  Socket m_socket;
   uint16_t m_port;
 
   // thread pool for clients and queued clients

@@ -3,37 +3,36 @@
 #include "client.h"
 
 Client::Client()
-  : m_fd { -1 }
+  : m_socket { }
+  , m_fields { }
 {
 }
 
-Client::Client(int fd)
-  : m_fd { fd }
+Client::Client(Socket&& socket)
+  : m_socket { std::move(socket) }
+  , m_fields { }
 {
 }
 
-Client::Client(Client &&other)
-  : m_fd { other.m_fd }
+Client::Client(Client&& other)
+  : Client(std::move(other.m_socket))
 {
-  other.m_fd = -1;
-}
-
-void Client::operator =(Client &&other) {
-  m_fd = other.m_fd;
-  other.m_fd = -1;
 }
 
 Client::~Client() {
-  if (m_fd != -1) {
-    ::close(m_fd);
-  }
+  // { empty }
+}
+
+void Client::operator=(Client &&other) {
+  m_socket = std::move(other.m_socket);
+  m_fields = std::move(other.m_fields);
 }
 
 std::optional<std::string> Client::read() {
   std::string contents;
   char buffer[512];
   for (;;) {
-    int n = ::read(m_fd, buffer, sizeof buffer - 1);
+    int n = m_socket.recieve(reinterpret_cast<uint8_t *>(buffer), sizeof buffer - 1);
     if (n < 0) {
       return std::nullopt;
     }
@@ -47,8 +46,8 @@ std::optional<std::string> Client::read() {
 }
 
 void Client::write_line(std::string_view contents) {
-  ::write(m_fd, contents.data(), contents.size());
-  ::write(m_fd, "\r\n", 2);
+  m_socket.send(reinterpret_cast<const uint8_t*>(contents.data()), contents.size());
+  m_socket.send(reinterpret_cast<const uint8_t*>("\r\n"), 2);
 }
 
 void Client::write_html(std::string_view contents) {
